@@ -107,10 +107,14 @@ async function init() {
   }
 
   const { data: members } = await sb.from('dues_status').select('name_kana_norm').order('name_kana_norm');
+  const { data: aliases } = await sb.from('dues_aliases').select('alias_norm');
   const seen = new Set();
   allMembers = [];
   (members || []).forEach(m => {
     if (!seen.has(m.name_kana_norm)) { seen.add(m.name_kana_norm); allMembers.push(m.name_kana_norm); }
+  });
+  (aliases || []).forEach(a => {
+    if (!seen.has(a.alias_norm)) { seen.add(a.alias_norm); allMembers.push(a.alias_norm); }
   });
 }
 
@@ -138,7 +142,16 @@ async function search(kana) {
   document.getElementById('result-card').innerHTML = '';
   if (!norm) return;
 
-  const { data: rows } = await sb.from('dues_status').select('*').eq('name_kana_norm', norm).order('month');
+  let matchNorm = norm;
+  let { data: rows } = await sb.from('dues_status').select('*').eq('name_kana_norm', matchNorm).order('month');
+  if (!rows || rows.length === 0) {
+    const { data: aliasRows } = await sb.from('dues_aliases').select('target_norm').eq('alias_norm', norm);
+    if (aliasRows && aliasRows.length > 0) {
+      matchNorm = aliasRows[0].target_norm;
+      const r2 = await sb.from('dues_status').select('*').eq('name_kana_norm', matchNorm).order('month');
+      rows = r2.data;
+    }
+  }
   if (!rows || rows.length === 0) {
     document.getElementById('notfound-msg').innerHTML =
       `<div class="notfound">「${kana}」が見つかりませんでした。ひらがな表記をご確認ください（姓名の間にスペースを入れずに入力してください）。</div>`;
@@ -148,6 +161,8 @@ async function search(kana) {
   const memberName = rows[0].name;
   const asOfYm = parseInt(meta.as_of_ym || '999999');
   let totalUnpaid = 0;
+  let furthestPaidYm = 0;
+  let furthestPaidMonth = null;
 
   const monthOrder = [4,5,6,7,8,9,10,11,12,1,2,3];
   const byMonth = {};
@@ -167,7 +182,8 @@ async function search(kana) {
     if (r.amount === 0) {
       badge = `<span class="badge b-exempt">免除</span>`;
     } else if (r.paid) {
-      const dateLabel = r.paid_date ? `<span class="date-label">${parseInt(r.paid_date.slice(5,7))}/${parseInt(r.paid_date.slice(8,10))}</span>` : '';
+      if (ym > furthestPaidYm) { furthestPaidYm = ym; furthestPaidMonth = mo; }
+      const dateLabel = r.paid_date ? `<span class="date-label">✅ ${parseInt(r.paid_date.slice(5,7))}/${parseInt(r.paid_date.slice(8,10))} に入金済み</span>` : '';
       const cls = r.amount < 3000 ? 'b-half' : 'b-paid';
       badge = `<span class="badge ${cls}">支払済</span>${dateLabel}`;
     } else if (isFuture) {
@@ -185,9 +201,19 @@ async function search(kana) {
     ? 'お手数ですが、お早めのお支払いをお願いします🙏'
     : '未払いはありません、ありがとうございます！';
 
+  const monthsAhead = furthestPaidYm > asOfYm
+    ? monthOrder.indexOf(furthestPaidMonth) - monthOrder.indexOf(parseInt(String(asOfYm).slice(-2)) || monthOrder[0])
+    : 0;
+  const praiseBanner = (furthestPaidYm > asOfYm)
+    ? `<div style="background:#eafaf0;border:1px solid #b8e8c8;border-radius:6px;padding:10px 12px;font-size:13px;color:#1e6040;margin-bottom:14px;text-align:center">
+         🌟 <strong>${MONTH_LABELS[furthestPaidMonth]}分</strong>まで前払いしていただいています。いつもありがとうございます！
+       </div>`
+    : '';
+
   document.getElementById('result-card').innerHTML = `
     <div class="card">
       <div class="name-title">${memberName} さん</div>
+      ${praiseBanner}
       <div class="month-list">${rowsHtml}</div>
       <div class="summary">
         <div style="font-size:12px;color:#888;margin-bottom:4px">未払い合計（今月まで）</div>

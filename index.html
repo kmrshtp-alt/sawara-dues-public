@@ -34,6 +34,8 @@ button:hover { background: #2d5a8e; }
 .b-exempt  { background: #adb5bd; }
 .b-future  { background: #e9ecef; color: #aaa; }
 .future-m  { color: #bbb; font-size: 12.5px; }
+.right-wrap { display: flex; align-items: center; }
+.due-soon  { background: #fff0d6; color: #9a5b00; font-weight: bold; font-size: 12.5px; padding: 5px 10px; border-radius: 4px; border: 1px solid #f0c878; }
 .date-label { font-size: 11px; color: #999; margin-left: 8px; }
 .summary { margin-top: 16px; padding-top: 14px; border-top: 1px solid #eee; text-align: center; }
 .summary .amt { font-size: 22px; font-weight: bold; }
@@ -204,7 +206,7 @@ async function search(kana) {
     const r = byMonth[mo];
     const label = MONTH_LABELS[mo];
     if (!r) {
-      rowsHtml += `<div class="month-row"><span class="m future-m">${label}</span><span class="future-m">—</span></div>`;
+      rowsHtml += `<div class="month-row"><span class="m future-m">${label}</span><span class="right-wrap"><span class="future-m">—</span></span></div>`;
       return;
     }
     const ym = r.year * 100 + r.month;
@@ -220,7 +222,7 @@ async function search(kana) {
     } else if (isFuture) {
       if (!nextDueShown) {
         nextDueShown = true;
-        right = `<span class="future-m">${duesDueDateLabel(r.year, r.month)}までに支払い</span>`;
+        right = `<span class="due-soon">⚠️ ${duesDueDateLabel(r.year, r.month)}までに支払い</span>`;
       } else {
         right = `<span class="future-m">—</span>`;
       }
@@ -230,7 +232,7 @@ async function search(kana) {
       right = `<span class="badge ${cls}">未払</span>`;
     }
     const labelCls = isFuture && !r.paid && r.amount > 0 ? 'future-m' : '';
-    rowsHtml += `<div class="month-row"><span class="m ${labelCls}">${label}</span>${right}</div>`;
+    rowsHtml += `<div class="month-row"><span class="m ${labelCls}">${label}</span><span class="right-wrap">${right}</span></div>`;
   });
 
   const zeroClass = totalUnpaid === 0 ? 'zero' : 'nonzero';

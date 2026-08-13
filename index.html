@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>団費支払い状況の確認 - 早良市民吹奏楽団</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -13,6 +14,7 @@ body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; font-size: 15px; back
 h1 { font-size: 17px; color: #1e3a5f; margin-bottom: 4px; }
 .sub { font-size: 12px; color: #888; margin-bottom: 20px; }
 .card { background: white; border-radius: 8px; padding: 18px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
 form { display: flex; gap: 8px; }
 .input-wrap { position: relative; flex: 1; min-width: 0; }
 input[type=text] { width: 100%; padding: 10px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; background: white; color: #333; }
@@ -42,6 +44,7 @@ button:hover { background: #2d5a8e; }
 .summary .amt.zero { color: #28a745; }
 .summary .amt.nonzero { color: #dc3545; }
 .notfound { color: #dc3545; font-size: 13px; margin-top: 10px; }
+.error-msg { color: #b35900; font-size: 13px; margin-top: 10px; }
 .hint { font-size: 11px; color: #aaa; margin-top: 14px; line-height: 1.6; }
 .reflected { background: #fff8e6; border: 1px solid #f0e0b0; border-radius: 6px; padding: 10px 12px; font-size: 12.5px; color: #7a6420; margin-bottom: 16px; line-height: 1.6; }
 .loading { text-align: center; color: #aaa; font-size: 13px; padding: 20px; }
@@ -57,8 +60,9 @@ button:hover { background: #2d5a8e; }
   <div class="card">
     <form id="search-form">
       <div class="input-wrap">
-        <input type="text" id="name-input" placeholder="ひらがなでお名前を入力（例：やまだたろう）" autocomplete="off">
-        <div class="suggest-list" id="suggest-list"></div>
+        <label for="name-input" class="visually-hidden">お名前（ひらがな）</label>
+        <input type="text" id="name-input" placeholder="ひらがなでお名前を入力（例：やまだたろう）" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="suggest-list" aria-autocomplete="list">
+        <div class="suggest-list" id="suggest-list" role="listbox"></div>
       </div>
       <button type="submit">確認する</button>
     </form>
@@ -81,6 +85,10 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const MONTH_LABELS = {4:'4月',5:'5月',6:'6月',7:'7月',8:'8月',9:'9月',10:'10月',11:'11月',12:'12月',1:'1月',2:'2月',3:'3月'};
 
+function escapeHtml(s) {
+  return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
 function toKatakana(s) {
   return (s || '').replace(/[ぁ-ゖ]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60));
 }
@@ -98,6 +106,7 @@ function lastDayOfMonth(year, month) {
 
 function duesDueDateLabel(year, month) {
   // 翌月分を今月末までに前払い。ただし4月分は年度またぎを避けるため4月自体が期限。
+  // ※ 同じルールを sawara-kaikei/app.py の _dues_due_date() にも実装している。ルールを変える場合は両方直すこと。
   let dueYear, dueMonth;
   if (month === 4) { dueYear = year; dueMonth = 4; }
   else if (month === 1) { dueYear = year - 1; dueMonth = 12; }
@@ -110,39 +119,48 @@ let allMembers = [];
 let meta = { reflected_date: null, as_of_ym: null, fiscal_year: null };
 
 async function init() {
-  const { data: metaRows } = await sb.from('dues_meta').select('key, value');
-  (metaRows || []).forEach(r => { meta[r.key] = r.value; });
+  try {
+    const { data: metaRows } = await sb.from('dues_meta').select('key, value');
+    (metaRows || []).forEach(r => { meta[r.key] = r.value; });
 
-  if (meta.fiscal_year) {
-    document.getElementById('fiscal-year-label').textContent = `早良市民吹奏楽団　${meta.fiscal_year}年度`;
-  }
-  if (meta.reflected_date) {
-    const d = meta.reflected_date;
-    const md = `${parseInt(d.slice(5,7))}/${parseInt(d.slice(8,10))}`;
-    document.getElementById('reflected-banner').innerHTML =
-      `<div class="reflected">💡 入金の反映は <strong>${md}</strong> 時点までです。それ以降にお振込みいただいた分は、まだ「未払」と表示されている場合があります。</div>`;
-  }
+    if (meta.fiscal_year) {
+      document.getElementById('fiscal-year-label').textContent = `早良市民吹奏楽団　${meta.fiscal_year}年度`;
+    }
+    if (meta.reflected_date) {
+      const d = meta.reflected_date;
+      const md = `${parseInt(d.slice(5,7))}/${parseInt(d.slice(8,10))}`;
+      document.getElementById('reflected-banner').innerHTML =
+        `<div class="reflected">💡 入金の反映は <strong>${md}</strong> 時点までです。それ以降にお振込みいただいた分は、まだ「未払」と表示されている場合があります。</div>`;
+    }
 
-  const { data: members } = await sb.from('dues_status').select('name_kana_norm').order('name_kana_norm');
-  const { data: aliases } = await sb.from('dues_aliases').select('alias_norm');
-  const seen = new Set();
-  allMembers = [];
-  (members || []).forEach(m => {
-    if (!seen.has(m.name_kana_norm)) { seen.add(m.name_kana_norm); allMembers.push(m.name_kana_norm); }
-  });
-  (aliases || []).forEach(a => {
-    if (!seen.has(a.alias_norm)) { seen.add(a.alias_norm); allMembers.push(a.alias_norm); }
-  });
+    const { data: names } = await sb.from('dues_names').select('name_kana_norm').order('name_kana_norm');
+    const { data: aliases } = await sb.from('dues_aliases').select('alias_norm');
+    const seen = new Set();
+    allMembers = [];
+    (names || []).forEach(m => {
+      if (!seen.has(m.name_kana_norm)) { seen.add(m.name_kana_norm); allMembers.push(m.name_kana_norm); }
+    });
+    (aliases || []).forEach(a => {
+      if (!seen.has(a.alias_norm)) { seen.add(a.alias_norm); allMembers.push(a.alias_norm); }
+    });
+  } catch (e) {
+    // 候補リストが使えないだけで、名前を直接入力しての確認は引き続き可能
+  }
 }
+
+let activeSuggestIndex = -1;
 
 function renderSuggestions(query) {
   const list = document.getElementById('suggest-list');
+  const input = document.getElementById('name-input');
+  activeSuggestIndex = -1;
   const norm = normalizeKana(query);
-  if (!norm) { list.style.display = 'none'; list.innerHTML = ''; return; }
+  if (!norm) { list.style.display = 'none'; list.innerHTML = ''; input.setAttribute('aria-expanded', 'false'); return; }
   const matches = allMembers.filter(n => n.includes(norm)).slice(0, 8);
-  if (matches.length === 0) { list.style.display = 'none'; list.innerHTML = ''; return; }
-  list.innerHTML = matches.map(n => `<div class="suggest-item">${toHiragana(n)}</div>`).join('');
+  if (matches.length === 0) { list.style.display = 'none'; list.innerHTML = ''; input.setAttribute('aria-expanded', 'false'); return; }
+  list.innerHTML = matches.map((n, i) => `<div class="suggest-item" role="option" id="suggest-opt-${i}">${escapeHtml(toHiragana(n))}</div>`).join('');
   list.style.display = 'block';
+  input.setAttribute('aria-expanded', 'true');
   list.querySelectorAll('.suggest-item').forEach(el => {
     el.addEventListener('mousedown', (e) => {
       e.preventDefault();
@@ -153,39 +171,56 @@ function renderSuggestions(query) {
   });
 }
 
+function moveSuggestSelection(delta) {
+  const list = document.getElementById('suggest-list');
+  const items = list.querySelectorAll('.suggest-item');
+  if (items.length === 0) return;
+  items[activeSuggestIndex]?.classList.remove('active');
+  activeSuggestIndex = (activeSuggestIndex + delta + items.length) % items.length;
+  items[activeSuggestIndex].classList.add('active');
+  items[activeSuggestIndex].scrollIntoView({ block: 'nearest' });
+}
+
 async function search(kana) {
   const norm = normalizeKana(kana);
-  document.getElementById('notfound-msg').innerHTML = '';
-  document.getElementById('result-card').innerHTML = '';
+  const notfoundEl = document.getElementById('notfound-msg');
+  const resultEl = document.getElementById('result-card');
+  notfoundEl.innerHTML = '';
+  resultEl.innerHTML = '';
   if (!norm) return;
 
-  let matchNorm = norm;
-  let { data: rows } = await sb.from('dues_status').select('*').eq('name_kana_norm', matchNorm).order('month');
-  if (!rows || rows.length === 0) {
-    const { data: aliasRows } = await sb.from('dues_aliases').select('target_norm').eq('alias_norm', norm);
-    if (aliasRows && aliasRows.length > 0) {
-      matchNorm = aliasRows[0].target_norm;
-      const r2 = await sb.from('dues_status').select('*').eq('name_kana_norm', matchNorm).order('month');
-      rows = r2.data;
-    }
+  resultEl.innerHTML = `<div class="loading">確認中…</div>`;
+
+  let rows;
+  try {
+    const { data, error } = await sb.rpc('lookup_dues', { p_norm: norm });
+    if (error) throw error;
+    rows = data;
+  } catch (e) {
+    resultEl.innerHTML = '';
+    notfoundEl.innerHTML = `<div class="error-msg">通信エラーが発生しました。電波状況をご確認の上、もう一度お試しください。</div>`;
+    return;
   }
+
+  resultEl.innerHTML = '';
+
   if (!rows || rows.length === 0) {
     const close = allMembers.filter(n => n.includes(norm) || norm.includes(n)).slice(0, 5);
     if (close.length > 0) {
       const links = close.map(n =>
-        `<span class="suggest-item" style="display:inline-block;border:1px solid #ddd;border-radius:4px;padding:4px 10px;margin:2px 4px 0 0;cursor:pointer;background:white" data-name="${toHiragana(n)}">${toHiragana(n)}</span>`
+        `<span class="suggest-item close-match" style="display:inline-block;border:1px solid #ddd;border-radius:4px;padding:4px 10px;margin:2px 4px 0 0;cursor:pointer;background:white" data-name="${escapeHtml(toHiragana(n))}">${escapeHtml(toHiragana(n))}</span>`
       ).join('');
-      document.getElementById('notfound-msg').innerHTML =
-        `<div class="notfound">「${kana}」は見つかりませんでした。もしかして：<br>${links}</div>`;
-      document.querySelectorAll('#notfound-msg .suggest-item').forEach(el => {
+      notfoundEl.innerHTML =
+        `<div class="notfound">「${escapeHtml(kana)}」は見つかりませんでした。もしかして：<br>${links}</div>`;
+      notfoundEl.querySelectorAll('.close-match').forEach(el => {
         el.addEventListener('click', () => {
           document.getElementById('name-input').value = el.dataset.name;
           search(el.dataset.name);
         });
       });
     } else {
-      document.getElementById('notfound-msg').innerHTML =
-        `<div class="notfound">「${kana}」が見つかりませんでした。ひらがな表記をご確認ください（姓名の間にスペースを入れずに入力してください）。</div>`;
+      notfoundEl.innerHTML =
+        `<div class="notfound">「${escapeHtml(kana)}」が見つかりませんでした。ひらがな表記をご確認ください（姓名の間にスペースを入れずに入力してください）。</div>`;
     }
     return;
   }
@@ -247,9 +282,9 @@ async function search(kana) {
        </div>`
     : '';
 
-  document.getElementById('result-card').innerHTML = `
+  resultEl.innerHTML = `
     <div class="card">
-      <div class="name-title">${memberName} さん</div>
+      <div class="name-title">${escapeHtml(memberName)} さん</div>
       <div class="summary" style="margin-top:0;padding-top:0;border-top:none;border-bottom:1px solid #eee;padding-bottom:14px;margin-bottom:14px">
         <div style="font-size:12px;color:#888;margin-bottom:4px">未払い合計（今月まで）</div>
         <div class="amt ${zeroClass}">¥${totalUnpaid.toLocaleString()}</div>
@@ -265,7 +300,25 @@ const nameInput = document.getElementById('name-input');
 nameInput.addEventListener('input', () => renderSuggestions(nameInput.value));
 nameInput.addEventListener('focus', () => renderSuggestions(nameInput.value));
 nameInput.addEventListener('blur', () => {
-  setTimeout(() => { document.getElementById('suggest-list').style.display = 'none'; }, 150);
+  setTimeout(() => {
+    document.getElementById('suggest-list').style.display = 'none';
+    nameInput.setAttribute('aria-expanded', 'false');
+  }, 150);
+});
+nameInput.addEventListener('keydown', (e) => {
+  const list = document.getElementById('suggest-list');
+  if (list.style.display !== 'block') return;
+  if (e.key === 'ArrowDown') { e.preventDefault(); moveSuggestSelection(1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); moveSuggestSelection(-1); }
+  else if (e.key === 'Escape') { list.style.display = 'none'; nameInput.setAttribute('aria-expanded', 'false'); }
+  else if (e.key === 'Enter' && activeSuggestIndex >= 0) {
+    e.preventDefault();
+    const items = list.querySelectorAll('.suggest-item');
+    const chosen = items[activeSuggestIndex].textContent;
+    nameInput.value = chosen;
+    list.style.display = 'none';
+    search(chosen);
+  }
 });
 
 document.getElementById('search-form').addEventListener('submit', (e) => {

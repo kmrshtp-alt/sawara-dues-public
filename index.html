@@ -7,15 +7,21 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; font-size: 15px; background: #f5f7fa; color: #333; padding: 20px 14px 60px; }
+html { -webkit-text-size-adjust: 100%; }
+body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; font-size: 15px; background: #f5f7fa; color: #333; padding: 20px 14px 60px; overflow-x: hidden; }
 .wrap { max-width: 480px; margin: 0 auto; }
 h1 { font-size: 17px; color: #1e3a5f; margin-bottom: 4px; }
 .sub { font-size: 12px; color: #888; margin-bottom: 20px; }
 .card { background: white; border-radius: 8px; padding: 18px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
 form { display: flex; gap: 8px; }
-input[type=text] { flex: 1; padding: 10px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 15px; }
-button { padding: 10px 18px; border: none; border-radius: 6px; background: #1e3a5f; color: white; font-size: 14px; cursor: pointer; }
+.input-wrap { position: relative; flex: 1; min-width: 0; }
+input[type=text] { width: 100%; padding: 10px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; background: white; color: #333; }
+input[type=text]:focus { outline: none; border-color: #1e3a5f; }
+button { flex-shrink: 0; padding: 10px 16px; border: none; border-radius: 6px; background: #1e3a5f; color: white; font-size: 14px; cursor: pointer; }
 button:hover { background: #2d5a8e; }
+.suggest-list { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: white; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,.12); max-height: 220px; overflow-y: auto; z-index: 50; display: none; }
+.suggest-item { padding: 9px 12px; font-size: 14px; color: #333; cursor: pointer; }
+.suggest-item:hover, .suggest-item.active { background: #f0f4fa; }
 .name-title { font-size: 16px; font-weight: bold; margin-bottom: 12px; }
 .month-list { display: flex; flex-direction: column; gap: 6px; }
 .month-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-radius: 6px; background: #f8fafc; }
@@ -47,16 +53,19 @@ button:hover { background: #2d5a8e; }
 
   <div class="card">
     <form id="search-form">
-      <input type="text" id="name-input" list="member-names" placeholder="カタカナでお名前を入力（例：キムラ チアキ）" autocomplete="off">
+      <div class="input-wrap">
+        <input type="text" id="name-input" placeholder="カタカナでお名前を入力（例：キムラチアキ）" autocomplete="off">
+        <div class="suggest-list" id="suggest-list"></div>
+      </div>
       <button type="submit">確認する</button>
     </form>
-    <datalist id="member-names"></datalist>
     <div id="notfound-msg"></div>
   </div>
 
   <div id="result-card"></div>
 
   <div class="hint">
+    ※ お名前は姓名の間にスペースを入れず、カタカナで入力してください（例：キムラチアキ）。<br>
     ※ このページはご自身の支払い状況を確認するためのものです。<br>
     ※ 内容に誤りがある場合は会計担当までご連絡ください。
   </div>
@@ -90,14 +99,30 @@ async function init() {
       `<div class="reflected">💡 入金の反映は <strong>${md}</strong> 時点までです。それ以降にお振込みいただいた分は、まだ「未払」と表示されている場合があります。</div>`;
   }
 
-  const { data: members } = await sb.from('dues_status').select('name_kana, name_kana_norm').order('name_kana');
+  const { data: members } = await sb.from('dues_status').select('name_kana_norm').order('name_kana_norm');
   const seen = new Set();
   allMembers = [];
   (members || []).forEach(m => {
-    if (!seen.has(m.name_kana_norm)) { seen.add(m.name_kana_norm); allMembers.push(m.name_kana); }
+    if (!seen.has(m.name_kana_norm)) { seen.add(m.name_kana_norm); allMembers.push(m.name_kana_norm); }
   });
-  const datalist = document.getElementById('member-names');
-  datalist.innerHTML = allMembers.map(n => `<option value="${n}">`).join('');
+}
+
+function renderSuggestions(query) {
+  const list = document.getElementById('suggest-list');
+  const norm = normalizeKana(query);
+  if (!norm) { list.style.display = 'none'; list.innerHTML = ''; return; }
+  const matches = allMembers.filter(n => n.includes(norm)).slice(0, 8);
+  if (matches.length === 0) { list.style.display = 'none'; list.innerHTML = ''; return; }
+  list.innerHTML = matches.map(n => `<div class="suggest-item">${n}</div>`).join('');
+  list.style.display = 'block';
+  list.querySelectorAll('.suggest-item').forEach(el => {
+    el.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      document.getElementById('name-input').value = el.textContent;
+      list.style.display = 'none';
+      search(el.textContent);
+    });
+  });
 }
 
 async function search(kana) {
@@ -109,7 +134,7 @@ async function search(kana) {
   const { data: rows } = await sb.from('dues_status').select('*').eq('name_kana_norm', norm).order('month');
   if (!rows || rows.length === 0) {
     document.getElementById('notfound-msg').innerHTML =
-      `<div class="notfound">「${kana}」が見つかりませんでした。カタカナ表記をご確認ください（姓名の間のスペースはあってもなくても大丈夫です）。</div>`;
+      `<div class="notfound">「${kana}」が見つかりませんでした。カタカナ表記をご確認ください（姓名の間にスペースを入れずに入力してください）。</div>`;
     return;
   }
 
@@ -166,9 +191,17 @@ async function search(kana) {
   `;
 }
 
+const nameInput = document.getElementById('name-input');
+nameInput.addEventListener('input', () => renderSuggestions(nameInput.value));
+nameInput.addEventListener('focus', () => renderSuggestions(nameInput.value));
+nameInput.addEventListener('blur', () => {
+  setTimeout(() => { document.getElementById('suggest-list').style.display = 'none'; }, 150);
+});
+
 document.getElementById('search-form').addEventListener('submit', (e) => {
   e.preventDefault();
-  search(document.getElementById('name-input').value);
+  document.getElementById('suggest-list').style.display = 'none';
+  search(nameInput.value);
 });
 
 init();

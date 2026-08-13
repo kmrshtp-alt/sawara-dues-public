@@ -153,8 +153,23 @@ async function search(kana) {
     }
   }
   if (!rows || rows.length === 0) {
-    document.getElementById('notfound-msg').innerHTML =
-      `<div class="notfound">「${kana}」が見つかりませんでした。ひらがな表記をご確認ください（姓名の間にスペースを入れずに入力してください）。</div>`;
+    const close = allMembers.filter(n => n.includes(norm) || norm.includes(n)).slice(0, 5);
+    if (close.length > 0) {
+      const links = close.map(n =>
+        `<span class="suggest-item" style="display:inline-block;border:1px solid #ddd;border-radius:4px;padding:4px 10px;margin:2px 4px 0 0;cursor:pointer;background:white" data-name="${toHiragana(n)}">${toHiragana(n)}</span>`
+      ).join('');
+      document.getElementById('notfound-msg').innerHTML =
+        `<div class="notfound">「${kana}」は見つかりませんでした。もしかして：<br>${links}</div>`;
+      document.querySelectorAll('#notfound-msg .suggest-item').forEach(el => {
+        el.addEventListener('click', () => {
+          document.getElementById('name-input').value = el.dataset.name;
+          search(el.dataset.name);
+        });
+      });
+    } else {
+      document.getElementById('notfound-msg').innerHTML =
+        `<div class="notfound">「${kana}」が見つかりませんでした。ひらがな表記をご確認ください（姓名の間にスペースを入れずに入力してください）。</div>`;
+    }
     return;
   }
 

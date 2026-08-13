@@ -212,24 +212,25 @@ async function search(kana) {
     const ym = r.year * 100 + r.month;
     const isFuture = ym > asOfYm;
     let badgeHtml, extraHtml = '';
+    const amountLabel = `¥${(r.amount || 0).toLocaleString()}`;
     if (r.amount === 0) {
       badgeHtml = `<span class="badge b-exempt">免除</span>`;
     } else if (r.paid) {
       if (ym > furthestPaidYm) { furthestPaidYm = ym; furthestPaidMonth = mo; }
       extraHtml = r.paid_date ? `<span class="date-label">${parseInt(r.paid_date.slice(5,7))}/${parseInt(r.paid_date.slice(8,10))} に入金済み ✅</span>` : '';
       const cls = r.amount < 3000 ? 'b-half' : 'b-paid';
-      badgeHtml = `<span class="badge ${cls}">支払済</span>`;
+      badgeHtml = `<span class="badge ${cls}">支払済 ${amountLabel}</span>`;
     } else if (isFuture) {
       if (!nextDueShown) {
         nextDueShown = true;
-        badgeHtml = `<span class="due-soon">⚠️ ${duesDueDateLabel(r.year, r.month)}までに支払い</span>`;
+        badgeHtml = `<span class="due-soon">⚠️ ${duesDueDateLabel(r.year, r.month)}までに ${amountLabel}</span>`;
       } else {
         badgeHtml = `<span class="future-m">—</span>`;
       }
     } else {
       if (!r.paid && r.amount > 0) totalUnpaid += r.amount;
       const cls = r.amount < 3000 ? 'b-halfunpaid' : 'b-unpaid';
-      badgeHtml = `<span class="badge ${cls}">未払</span>`;
+      badgeHtml = `<span class="badge ${cls}">未払 ${amountLabel}</span>`;
     }
     const labelCls = isFuture && !r.paid && r.amount > 0 ? 'future-m' : '';
     rowsHtml += `<div class="month-row"><span class="m ${labelCls}">${label}</span><span class="right-wrap">${extraHtml}${badgeHtml}</span></div>`;

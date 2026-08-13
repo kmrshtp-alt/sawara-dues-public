@@ -24,8 +24,10 @@ button:hover { background: #2d5a8e; }
 .suggest-item:hover, .suggest-item.active { background: #f0f4fa; }
 .name-title { font-size: 16px; font-weight: bold; margin-bottom: 12px; }
 .month-list { display: flex; flex-direction: column; gap: 6px; }
-.month-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-radius: 6px; background: #f8fafc; }
-.month-row .m { font-size: 13px; color: #555; width: 46px; }
+.month-row { display: flex; align-items: center; padding: 8px 10px; border-radius: 6px; background: #f8fafc; }
+.month-row .m { font-size: 13px; color: #555; width: 46px; flex-shrink: 0; }
+.badge-cell { width: 76px; flex-shrink: 0; }
+.extra-cell { flex: 1; text-align: right; }
 .badge { display: inline-block; padding: 4px 12px; border-radius: 4px; font-size: 12.5px; font-weight: bold; color: white; min-width: 64px; text-align: center; }
 .b-paid    { background: #28a745; }
 .b-half    { background: #17a2b8; }
@@ -34,9 +36,8 @@ button:hover { background: #2d5a8e; }
 .b-exempt  { background: #adb5bd; }
 .b-future  { background: #e9ecef; color: #aaa; }
 .future-m  { color: #bbb; font-size: 12.5px; }
-.right-wrap { display: flex; align-items: center; }
-.due-soon  { background: #fff0d6; color: #9a5b00; font-weight: bold; font-size: 12.5px; padding: 5px 10px; border-radius: 4px; border: 1px solid #f0c878; }
-.date-label { font-size: 11px; color: #999; margin-left: 8px; }
+.due-soon  { display: inline-block; background: #fff0d6; color: #9a5b00; font-weight: bold; font-size: 12.5px; padding: 5px 10px; border-radius: 4px; border: 1px solid #f0c878; white-space: nowrap; }
+.date-label { font-size: 11px; color: #999; }
 .summary { margin-top: 16px; padding-top: 14px; border-top: 1px solid #eee; text-align: center; }
 .summary .amt { font-size: 22px; font-weight: bold; }
 .summary .amt.zero { color: #28a745; }
@@ -206,33 +207,33 @@ async function search(kana) {
     const r = byMonth[mo];
     const label = MONTH_LABELS[mo];
     if (!r) {
-      rowsHtml += `<div class="month-row"><span class="m future-m">${label}</span><span class="right-wrap"><span class="future-m">—</span></span></div>`;
+      rowsHtml += `<div class="month-row"><span class="m future-m">${label}</span><span class="badge-cell future-m">—</span><span class="extra-cell"></span></div>`;
       return;
     }
     const ym = r.year * 100 + r.month;
     const isFuture = ym > asOfYm;
-    let right;
+    let badgeHtml, extraHtml = '';
     if (r.amount === 0) {
-      right = `<span class="badge b-exempt">免除</span>`;
+      badgeHtml = `<span class="badge b-exempt">免除</span>`;
     } else if (r.paid) {
       if (ym > furthestPaidYm) { furthestPaidYm = ym; furthestPaidMonth = mo; }
-      const dateLabel = r.paid_date ? `<span class="date-label">✅ ${parseInt(r.paid_date.slice(5,7))}/${parseInt(r.paid_date.slice(8,10))} に入金済み</span>` : '';
+      extraHtml = r.paid_date ? `<span class="date-label">✅ ${parseInt(r.paid_date.slice(5,7))}/${parseInt(r.paid_date.slice(8,10))} に入金済み</span>` : '';
       const cls = r.amount < 3000 ? 'b-half' : 'b-paid';
-      right = `<span class="badge ${cls}">支払済</span>${dateLabel}`;
+      badgeHtml = `<span class="badge ${cls}">支払済</span>`;
     } else if (isFuture) {
       if (!nextDueShown) {
         nextDueShown = true;
-        right = `<span class="due-soon">⚠️ ${duesDueDateLabel(r.year, r.month)}までに支払い</span>`;
+        badgeHtml = `<span class="due-soon">⚠️ ${duesDueDateLabel(r.year, r.month)}までに支払い</span>`;
       } else {
-        right = `<span class="future-m">—</span>`;
+        badgeHtml = `<span class="future-m">—</span>`;
       }
     } else {
       if (!r.paid && r.amount > 0) totalUnpaid += r.amount;
       const cls = r.amount < 3000 ? 'b-halfunpaid' : 'b-unpaid';
-      right = `<span class="badge ${cls}">未払</span>`;
+      badgeHtml = `<span class="badge ${cls}">未払</span>`;
     }
     const labelCls = isFuture && !r.paid && r.amount > 0 ? 'future-m' : '';
-    rowsHtml += `<div class="month-row"><span class="m ${labelCls}">${label}</span><span class="right-wrap">${right}</span></div>`;
+    rowsHtml += `<div class="month-row"><span class="m ${labelCls}">${label}</span><span class="badge-cell">${badgeHtml}</span><span class="extra-cell">${extraHtml}</span></div>`;
   });
 
   const zeroClass = totalUnpaid === 0 ? 'zero' : 'nonzero';

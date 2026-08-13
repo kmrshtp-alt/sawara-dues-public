@@ -54,7 +54,7 @@ button:hover { background: #2d5a8e; }
   <div class="card">
     <form id="search-form">
       <div class="input-wrap">
-        <input type="text" id="name-input" placeholder="カタカナでお名前を入力（例：キムラチアキ）" autocomplete="off">
+        <input type="text" id="name-input" placeholder="ひらがなでお名前を入力（例：やまだたろう）" autocomplete="off">
         <div class="suggest-list" id="suggest-list"></div>
       </div>
       <button type="submit">確認する</button>
@@ -65,7 +65,7 @@ button:hover { background: #2d5a8e; }
   <div id="result-card"></div>
 
   <div class="hint">
-    ※ お名前は姓名の間にスペースを入れず、カタカナで入力してください（例：キムラチアキ）。<br>
+    ※ お名前は姓名の間にスペースを入れず、ひらがなで入力してください（例：やまだたろう）。<br>
     ※ このページはご自身の支払い状況を確認するためのものです。<br>
     ※ 内容に誤りがある場合は会計担当までご連絡ください。
   </div>
@@ -78,8 +78,15 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const MONTH_LABELS = {4:'4月',5:'5月',6:'6月',7:'7月',8:'8月',9:'9月',10:'10月',11:'11月',12:'12月',1:'1月',2:'2月',3:'3月'};
 
+function toKatakana(s) {
+  return (s || '').replace(/[ぁ-ゖ]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60));
+}
+function toHiragana(s) {
+  return (s || '').replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
+}
 function normalizeKana(s) {
-  return (s || '').replace(/　/g, ' ').replace(/ /g, '').trim();
+  const noSpace = (s || '').replace(/　/g, ' ').replace(/ /g, '').trim();
+  return toKatakana(noSpace);
 }
 
 let allMembers = [];
@@ -113,7 +120,7 @@ function renderSuggestions(query) {
   if (!norm) { list.style.display = 'none'; list.innerHTML = ''; return; }
   const matches = allMembers.filter(n => n.includes(norm)).slice(0, 8);
   if (matches.length === 0) { list.style.display = 'none'; list.innerHTML = ''; return; }
-  list.innerHTML = matches.map(n => `<div class="suggest-item">${n}</div>`).join('');
+  list.innerHTML = matches.map(n => `<div class="suggest-item">${toHiragana(n)}</div>`).join('');
   list.style.display = 'block';
   list.querySelectorAll('.suggest-item').forEach(el => {
     el.addEventListener('mousedown', (e) => {
@@ -134,7 +141,7 @@ async function search(kana) {
   const { data: rows } = await sb.from('dues_status').select('*').eq('name_kana_norm', norm).order('month');
   if (!rows || rows.length === 0) {
     document.getElementById('notfound-msg').innerHTML =
-      `<div class="notfound">「${kana}」が見つかりませんでした。カタカナ表記をご確認ください（姓名の間にスペースを入れずに入力してください）。</div>`;
+      `<div class="notfound">「${kana}」が見つかりませんでした。ひらがな表記をご確認ください（姓名の間にスペースを入れずに入力してください）。</div>`;
     return;
   }
 

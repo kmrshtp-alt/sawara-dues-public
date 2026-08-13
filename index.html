@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>団費支払い状況の確認 - 早良市民吹奏楽団</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; font-size: 15px; background: #f5f7fa; color: #333; padding: 20px 14px 60px; }
+.wrap { max-width: 480px; margin: 0 auto; }
+h1 { font-size: 17px; color: #1e3a5f; margin-bottom: 4px; }
+.sub { font-size: 12px; color: #888; margin-bottom: 20px; }
+.card { background: white; border-radius: 8px; padding: 18px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+form { display: flex; gap: 8px; }
+input[type=text] { flex: 1; padding: 10px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 15px; }
+button { padding: 10px 18px; border: none; border-radius: 6px; background: #1e3a5f; color: white; font-size: 14px; cursor: pointer; }
+button:hover { background: #2d5a8e; }
+.name-title { font-size: 16px; font-weight: bold; margin-bottom: 12px; }
+.month-list { display: flex; flex-direction: column; gap: 6px; }
+.month-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-radius: 6px; background: #f8fafc; }
+.month-row .m { font-size: 13px; color: #555; width: 46px; }
+.badge { display: inline-block; padding: 4px 12px; border-radius: 4px; font-size: 12.5px; font-weight: bold; color: white; min-width: 64px; text-align: center; }
+.b-paid    { background: #28a745; }
+.b-half    { background: #17a2b8; }
+.b-unpaid  { background: #dc3545; }
+.b-halfunpaid { background: #e67e22; }
+.b-exempt  { background: #adb5bd; }
+.b-future  { background: #e9ecef; color: #aaa; }
+.date-label { font-size: 11px; color: #999; margin-left: 8px; }
+.summary { margin-top: 16px; padding-top: 14px; border-top: 1px solid #eee; text-align: center; }
+.summary .amt { font-size: 22px; font-weight: bold; }
+.summary .amt.zero { color: #28a745; }
+.summary .amt.nonzero { color: #dc3545; }
+.notfound { color: #dc3545; font-size: 13px; margin-top: 10px; }
+.hint { font-size: 11px; color: #aaa; margin-top: 14px; line-height: 1.6; }
+.reflected { background: #fff8e6; border: 1px solid #f0e0b0; border-radius: 6px; padding: 10px 12px; font-size: 12.5px; color: #7a6420; margin-bottom: 16px; line-height: 1.6; }
+.loading { text-align: center; color: #aaa; font-size: 13px; padding: 20px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎵 団費支払い状況の確認</h1>
+  <div class="sub" id="fiscal-year-label">早良市民吹奏楽団</div>
+
+  <div id="reflected-banner"></div>
+
+  <div class="card">
+    <form id="search-form">
+      <input type="text" id="name-input" list="member-names" placeholder="カタカナでお名前を入力（例：キムラ チアキ）" autocomplete="off">
+      <button type="submit">確認する</button>
+    </form>
+    <datalist id="member-names"></datalist>
+    <div id="notfound-msg"></div>
+  </div>
+
+  <div id="result-card"></div>
+
+  <div class="hint">
+    ※ このページはご自身の支払い状況を確認するためのものです。<br>
+    ※ 内容に誤りがある場合は会計担当までご連絡ください。
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://bratdtyytobqrgzcyayj.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_ExoLw1MKxw-VWzs9Jyw_zA_5eCO9UFk';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const MONTH_LABELS = {4:'4月',5:'5月',6:'6月',7:'7月',8:'8月',9:'9月',10:'10月',11:'11月',12:'12月',1:'1月',2:'2月',3:'3月'};
+
+function normalizeKana(s) {
+  return (s || '').replace(/　/g, ' ').replace(/ /g, '').trim();
+}
+
+let allMembers = [];
+let meta = { reflected_date: null, as_of_ym: null, fiscal_year: null };
+
+async function init() {
+  const { data: metaRows } = await sb.from('dues_meta').select('key, value');
+  (metaRows || []).forEach(r => { meta[r.key] = r.value; });
+
+  if (meta.fiscal_year) {
+    document.getElementById('fiscal-year-label').textContent = `早良市民吹奏楽団　${meta.fiscal_year}年度`;
+  }
+  if (meta.reflected_date) {
+    const d = meta.reflected_date;
+    const md = `${parseInt(d.slice(5,7))}/${parseInt(d.slice(8,10))}`;
+    document.getElementById('reflected-banner').innerHTML =
+      `<div class="reflected">💡 入金の反映は <strong>${md}</strong> 時点までです。それ以降にお振込みいただいた分は、まだ「未払」と表示されている場合があります。</div>`;
+  }
+
+  const { data: members } = await sb.from('dues_status').select('name_kana, name_kana_norm').order('name_kana');
+  const seen = new Set();
+  allMembers = [];
+  (members || []).forEach(m => {
+    if (!seen.has(m.name_kana_norm)) { seen.add(m.name_kana_norm); allMembers.push(m.name_kana); }
+  });
+  const datalist = document.getElementById('member-names');
+  datalist.innerHTML = allMembers.map(n => `<option value="${n}">`).join('');
+}
+
+async function search(kana) {
+  const norm = normalizeKana(kana);
+  document.getElementById('notfound-msg').innerHTML = '';
+  document.getElementById('result-card').innerHTML = '';
+  if (!norm) return;
+
+  const { data: rows } = await sb.from('dues_status').select('*').eq('name_kana_norm', norm).order('month');
+  if (!rows || rows.length === 0) {
+    document.getElementById('notfound-msg').innerHTML =
+      `<div class="notfound">「${kana}」が見つかりませんでした。カタカナ表記をご確認ください（姓名の間のスペースはあってもなくても大丈夫です）。</div>`;
+    return;
+  }
+
+  const memberName = rows[0].name;
+  const asOfYm = parseInt(meta.as_of_ym || '999999');
+  let totalUnpaid = 0;
+
+  const monthOrder = [4,5,6,7,8,9,10,11,12,1,2,3];
+  const byMonth = {};
+  rows.forEach(r => { byMonth[r.month] = r; });
+
+  let rowsHtml = '';
+  monthOrder.forEach(mo => {
+    const r = byMonth[mo];
+    const label = MONTH_LABELS[mo];
+    if (!r) {
+      rowsHtml += `<div class="month-row"><span class="m">${label}</span><span class="badge b-future">—</span></div>`;
+      return;
+    }
+    const ym = r.year * 100 + r.month;
+    const isFuture = ym > asOfYm;
+    let badge;
+    if (r.amount === 0) {
+      badge = `<span class="badge b-exempt">免除</span>`;
+    } else if (r.paid) {
+      const dateLabel = r.paid_date ? `<span class="date-label">${parseInt(r.paid_date.slice(5,7))}/${parseInt(r.paid_date.slice(8,10))}</span>` : '';
+      const cls = r.amount < 3000 ? 'b-half' : 'b-paid';
+      badge = `<span class="badge ${cls}">支払済</span>${dateLabel}`;
+    } else if (isFuture) {
+      badge = `<span class="badge b-future">未到来</span>`;
+    } else {
+      if (!r.paid && r.amount > 0) totalUnpaid += r.amount;
+      const cls = r.amount < 3000 ? 'b-halfunpaid' : 'b-unpaid';
+      badge = `<span class="badge ${cls}">未払</span>`;
+    }
+    rowsHtml += `<div class="month-row"><span class="m">${label}</span>${badge}</div>`;
+  });
+
+  const zeroClass = totalUnpaid === 0 ? 'zero' : 'nonzero';
+  const summaryMsg = totalUnpaid > 0
+    ? 'お手数ですが、お早めのお支払いをお願いします🙏'
+    : '未払いはありません、ありがとうございます！';
+
+  document.getElementById('result-card').innerHTML = `
+    <div class="card">
+      <div class="name-title">${memberName} さん</div>
+      <div class="month-list">${rowsHtml}</div>
+      <div class="summary">
+        <div style="font-size:12px;color:#888;margin-bottom:4px">未払い合計（今月まで）</div>
+        <div class="amt ${zeroClass}">¥${totalUnpaid.toLocaleString()}</div>
+        <div style="font-size:12px;color:#888;margin-top:6px">${summaryMsg}</div>
+      </div>
+    </div>
+  `;
+}
+
+document.getElementById('search-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  search(document.getElementById('name-input').value);
+});
+
+init();
+</script>
+</body>
+</html>

@@ -216,8 +216,8 @@ async function search(kana) {
       const cls = r.amount < 3000 ? 'b-half' : 'b-paid';
       badge = `<span class="badge ${cls}">支払済</span>${dateLabel}`;
     } else if (isFuture) {
-      const dueLabel = `<span class="date-label">${duesDueDateLabel(r.year, r.month)}までに支払い</span>`;
-      badge = `<span class="badge b-future">未到来</span>${dueLabel}`;
+      const dueLabel = `<span class="date-label">${duesDueDateLabel(r.year, r.month)}までに</span>`;
+      badge = `<span class="badge b-future">⏳</span>${dueLabel}`;
     } else {
       if (!r.paid && r.amount > 0) totalUnpaid += r.amount;
       const cls = r.amount < 3000 ? 'b-halfunpaid' : 'b-unpaid';

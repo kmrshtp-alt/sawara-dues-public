@@ -89,6 +89,20 @@ function normalizeKana(s) {
   return toKatakana(noSpace);
 }
 
+function lastDayOfMonth(year, month) {
+  return new Date(year, month, 0).getDate();
+}
+
+function duesDueDateLabel(year, month) {
+  // 翌月分を今月末までに前払い。ただし4月分は年度またぎを避けるため4月自体が期限。
+  let dueYear, dueMonth;
+  if (month === 4) { dueYear = year; dueMonth = 4; }
+  else if (month === 1) { dueYear = year - 1; dueMonth = 12; }
+  else { dueYear = year; dueMonth = month - 1; }
+  const day = lastDayOfMonth(dueYear, dueMonth);
+  return `${dueMonth}/${day}`;
+}
+
 let allMembers = [];
 let meta = { reflected_date: null, as_of_ym: null, fiscal_year: null };
 
@@ -202,7 +216,8 @@ async function search(kana) {
       const cls = r.amount < 3000 ? 'b-half' : 'b-paid';
       badge = `<span class="badge ${cls}">支払済</span>${dateLabel}`;
     } else if (isFuture) {
-      badge = `<span class="badge b-future">未到来</span>`;
+      const dueLabel = `<span class="date-label">${duesDueDateLabel(r.year, r.month)}までに支払い</span>`;
+      badge = `<span class="badge b-future">未到来</span>${dueLabel}`;
     } else {
       if (!r.paid && r.amount > 0) totalUnpaid += r.amount;
       const cls = r.amount < 3000 ? 'b-halfunpaid' : 'b-unpaid';

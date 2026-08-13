@@ -26,9 +26,8 @@ button:hover { background: #2d5a8e; }
 .month-list { display: flex; flex-direction: column; gap: 6px; }
 .month-row { display: flex; align-items: center; padding: 8px 10px; border-radius: 6px; background: #f8fafc; }
 .month-row .m { font-size: 13px; color: #555; width: 46px; flex-shrink: 0; }
-.badge-cell { width: 76px; flex-shrink: 0; }
-.extra-cell { flex: 1; text-align: right; }
-.badge { display: inline-block; padding: 4px 12px; border-radius: 4px; font-size: 12.5px; font-weight: bold; color: white; min-width: 64px; text-align: center; }
+.right-wrap { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.badge { display: inline-block; padding: 4px 12px; border-radius: 4px; font-size: 12.5px; font-weight: bold; color: white; min-width: 64px; text-align: center; flex-shrink: 0; }
 .b-paid    { background: #28a745; }
 .b-half    { background: #17a2b8; }
 .b-unpaid  { background: #dc3545; }
@@ -207,7 +206,7 @@ async function search(kana) {
     const r = byMonth[mo];
     const label = MONTH_LABELS[mo];
     if (!r) {
-      rowsHtml += `<div class="month-row"><span class="m future-m">${label}</span><span class="badge-cell future-m">—</span><span class="extra-cell"></span></div>`;
+      rowsHtml += `<div class="month-row"><span class="m future-m">${label}</span><span class="right-wrap"><span class="future-m">—</span></span></div>`;
       return;
     }
     const ym = r.year * 100 + r.month;
@@ -217,7 +216,7 @@ async function search(kana) {
       badgeHtml = `<span class="badge b-exempt">免除</span>`;
     } else if (r.paid) {
       if (ym > furthestPaidYm) { furthestPaidYm = ym; furthestPaidMonth = mo; }
-      extraHtml = r.paid_date ? `<span class="date-label">✅ ${parseInt(r.paid_date.slice(5,7))}/${parseInt(r.paid_date.slice(8,10))} に入金済み</span>` : '';
+      extraHtml = r.paid_date ? `<span class="date-label">${parseInt(r.paid_date.slice(5,7))}/${parseInt(r.paid_date.slice(8,10))} に入金済み ✅</span>` : '';
       const cls = r.amount < 3000 ? 'b-half' : 'b-paid';
       badgeHtml = `<span class="badge ${cls}">支払済</span>`;
     } else if (isFuture) {
@@ -233,7 +232,7 @@ async function search(kana) {
       badgeHtml = `<span class="badge ${cls}">未払</span>`;
     }
     const labelCls = isFuture && !r.paid && r.amount > 0 ? 'future-m' : '';
-    rowsHtml += `<div class="month-row"><span class="m ${labelCls}">${label}</span><span class="badge-cell">${badgeHtml}</span><span class="extra-cell">${extraHtml}</span></div>`;
+    rowsHtml += `<div class="month-row"><span class="m ${labelCls}">${label}</span><span class="right-wrap">${extraHtml}${badgeHtml}</span></div>`;
   });
 
   const zeroClass = totalUnpaid === 0 ? 'zero' : 'nonzero';

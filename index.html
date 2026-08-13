@@ -191,7 +191,7 @@ async function search(kana) {
     return;
   }
 
-  const memberName = rows[0].name;
+  const memberName = toHiragana(rows[0].name_kana);
   const asOfYm = parseInt(meta.as_of_ym || '999999');
   let totalUnpaid = 0;
   let furthestPaidYm = 0;

@@ -181,7 +181,43 @@ function moveSuggestSelection(delta) {
   items[activeSuggestIndex].scrollIntoView({ block: 'nearest' });
 }
 
+let searchSeq = 0;
+
+async function ticketCardHtml(nameKana) {
+  try {
+    const { data, error } = await sb.rpc('lookup_tickets', { p_norm: normalizeKana(nameKana) });
+    if (error || !data) return '';
+    return data.filter(t => t.due > 0).map(t => {
+      const unpaid = Math.max(t.due - t.paid, 0);
+      const undist = Math.max(t.due - t.distributed, 0);
+      const yen = n => '¥' + (n * t.price).toLocaleString();
+      const distBadge = undist === 0
+        ? '<span class="badge b-paid">配布済み</span>'
+        : `<span class="badge b-unpaid">未配布${t.distributed > 0 ? '（あと' + undist + '枚）' : ''}</span>`;
+      const paidBadge = unpaid === 0
+        ? '<span class="badge b-paid">入金済み ✅</span>'
+        : `<span class="badge b-unpaid">未入金 ${unpaid}枚 ${yen(unpaid)}</span>`;
+      const msg = unpaid > 0
+        ? 'ノルマ分のお振込みをお願いします🙏'
+        : 'ご入金を確認しました。ありがとうございます！';
+      return `
+        <div class="card">
+          <div class="name-title" style="font-size:15px">🎫 ${escapeHtml(t.event)} チケットノルマ</div>
+          <div class="month-list">
+            <div class="month-row"><span class="m" style="width:auto">ノルマ</span><span class="right-wrap"><span>${t.due}枚（${yen(t.due)}）</span></span></div>
+            <div class="month-row"><span class="m" style="width:auto">配布</span><span class="right-wrap">${distBadge}</span></div>
+            <div class="month-row"><span class="m" style="width:auto">入金</span><span class="right-wrap">${paidBadge}</span></div>
+          </div>
+          <div style="font-size:12px;color:#888;margin-top:10px;text-align:center">${msg}</div>
+        </div>`;
+    }).join('');
+  } catch (e) {
+    return '';
+  }
+}
+
 async function search(kana) {
+  const mySeq = ++searchSeq;
   const norm = normalizeKana(kana);
   const notfoundEl = document.getElementById('notfound-msg');
   const resultEl = document.getElementById('result-card');
@@ -294,6 +330,9 @@ async function search(kana) {
       <div class="month-list">${rowsHtml}</div>
     </div>
   `;
+
+  const ticketHtml = await ticketCardHtml(rows[0].name_kana);
+  if (ticketHtml && mySeq === searchSeq) resultEl.insertAdjacentHTML('beforeend', ticketHtml);
 }
 
 const nameInput = document.getElementById('name-input');
